@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>iPixel Controller</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .heading { text-align:center; }
+        body { background-color: black; color: white; font-family: sans-serif; }
+        h1 { margin-top:0; margin-bottom:10px; font-size:3rem; background: linear-gradient(to right, #ef5350, #f48fb1, #7e57c2, #2196f3, #26c6da, #43a047, #eeff41, #f9a825, #ff5722); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .card { padding: 20px; border-radius: 12px; background: #222; box-shadow: 0 4px 14px rgba(0,0,0,0.4); margin-bottom: 20px; }
+        .row { margin-bottom: 16px; }
+        #colorPreview { width:40px; height:40px; border-radius:8px; border:1px solid #ddd; display:inline-block; margin-left:10px; vertical-align:middle; }
+        button { margin-right:10px; padding:10px 20px; border-radius:8px; border:none; cursor:pointer; }
+        button.contrast { background-color: #26c6da; color:black; }
+        button.secondary { background-color:#555; color:white; }
+        input[type=range] { width:150px; }
+        input[type=text], input[type=number], select { padding:5px; border-radius:5px; border:none; margin-right:10px; }
+    </style>
+</head>
+<body>
+
+<h1 class="heading">iPixel-Control</h1>
+
+<div class="card">
+    <h3>Connection</h3>
+    <button id="connectbtn">Connect</button>
+    <button id="disconnectbtn" class="secondary" style="display:none;">Disconnect</button>
+    <p>Status: <span id="status" style="color:red;">Disconnected</span></p>
+</div>
+
+<div id="controls" class="card" style="display:none;">
+    <h3>Controls</h3>
+    <div class="row">
+        <label>Power</label><br>
+        <button id="on" class="contrast">On</button>
+        <button id="off" class="secondary">Off</button>
+    </div>
+    <div class="row">
+        <label for="brightness">Brightness</label>
+        <input type="range" id="brightness" min="1" max="100" value="50">
+        <span id="brightness_value">50</span>
+    </div>
+    <div class="row">
+        <label for="colorpicker">Color</label>
+        <input type="color" id="colorpicker" value="#ffffff">
+        <span id="colorPreview"></span>
+        <button id="setcolor">Apply Color</button>
+    </div>
+    <div class="row">
+        <label>Send Text</label>
+        <input type="text" id="textmsg" placeholder="Your message...">
+        <button id="sendtext">Send</button>
+    </div>
+</div>
+
+<div id="timecard" class="card" style="display:none;">
+    <h3>Time Settings</h3>
+    <div class="row">
+        <label>Manual Time (HH:MM:SS)</label><br>
+        <input type="number" id="hour" min="0" max="23"> :
+        <input type="number" id="minute" min="0" max="59"> :
+        <input type="number" id="second" min="0" max="59">
+        <button id="settime">Apply</button>
+        <button id="settime_now" class="secondary">Set Now</button>
+    </div>
+    <div class="row">
+        <label>Clock Style</label>
+        <select id="clockstyle"></select>
+        <button id="setclockstyle">Apply</button>
+    </div>
+    <div class="row">
+        <label>Device Time:</label> <span id="devicetime">--:--:--</span>
+    </div>
+</div>
+
+<script>
+// JavaScript
+let device, server, service, characteristic;
+const SERVICE_UUID = '000000fa-0000-1000-8000-00805f9b34fb';
+const CHAR_UUID = '0000fa02-0000-1000-8000-00805f9b34fb';
+
+const elements = {
+    connect: document.getElementById('connectbtn'),
+    disconnect: document.getElementById('disconnectbtn'),
+    status: document.getElementById('status'),
+    controls: document.getElementById('controls'),
+    timecard: document.getElementById('timecard'),
+    on: document.getElementById('on'),
+    off: document.getElementById('off'),
+    brightness: document.getElementById('brightness'),
+    brightnessVal: document.getElementById('brightness_value'),
+    color: document.getElementById('colorpicker'),
+    colorPreview: document.getElementById('colorPreview'),
+    setColor: document.getElementById('setcolor'),
+    hour: document.getElementById('hour'),
+    minute: document.getElementById('minute'),
+    second: document.getElementById('second'),
+    setTime: document.getElementById('settime'),
+    setTimeNow: document.getElementById('settime_now'),
+    clockstyle: document.getElementById('clockstyle'),
+    setClockStyle: document.getElementById('setclockstyle'),
+    devicetime: document.getElementById('devicetime'),
+    textmsg: document.getElementById('textmsg'),
+    sendtext: document.getElementById('sendtext')
+};
+
+// Populate clock styles
+for(let i=0;i<10;i++){ const op=document.createElement('option'); op.value=i; op.textContent='Style '+i; elements.clockstyle.appendChild(op); }
+
+// Color preview update
+elements.color.addEventListener('input',()=>{ elements.colorPreview.style.background=elements.color.value; });
+
+// Brightness update
+elements.brightness.addEventListener('input',()=>{ elements.brightnessVal.textContent=elements.brightness.value; send([0x05,0x00,0x04,0x80, parseInt(elements.brightness.value)]); });
+
+// Connect button
+elements.connect.addEventListener('click', async ()=>{
+    try{
+        device = await navigator.bluetooth.requestDevice({filters:[{namePrefix:'LED_BLE_'}], optionalServices:[SERVICE_UUID]});
+        server = await device.gatt.connect();
+        service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHAR_UUID);
+        elements.connect.style.display='none';
+        elements.disconnect.style.display='inline-block';
+        elements.status.textContent='Connected';
+        elements.status.style.color='lime';
+        elements.controls.style.display='block';
+        elements.timecard.style.display='block';
+    }catch(e){ console.error(e); }
+});
+
+// Disconnect button
+elements.disconnect.addEventListener('click', ()=>{ if(device?.gatt.connected) device.gatt.disconnect(); location.reload(); });
+
+// Power buttons
+elements.on.addEventListener('click', ()=>send([0x05,0x00,0x07,0x01,0x01]));
+elements.off.addEventListener('click', ()=>send([0x05,0x00,0x07,0x01,0x00]));
+
+// Color apply
+elements.setColor.addEventListener('click', ()=>{ const hex=elements.color.value; const r=parseInt(hex.substr(1,2),16), g=parseInt(hex.substr(3,2),16), b=parseInt(hex.substr(5,2),16); send([0x05,0x00,0x03,0x90,r,g,b]); });
+
+// Send text
+elements.sendtext.addEventListener('click', ()=>{
+    const text=elements.textmsg.value; if(!text) return;
+    const encoder=new TextEncoder();
+    const data=encoder.encode(text);
+    const header=new Uint8Array([0x10,0x00,data.length]);
+    const full=new Uint8Array([...header,...data]);
+    send(full);
+});
+
+// Set time
+elements.setTime.addEventListener('click', ()=>{
+    const h=clamp(elements.hour.value,0,23);
+    const m=clamp(elements.minute.value,0,59);
+    const s=clamp(elements.second.value,0,59);
+    send([0x08,0x00,0x01,0x80,h,m,s,0x00]);
+});
+
+// Set now
+elements.setTimeNow.addEventListener('click', ()=>{ const d=new Date(); send([0x08,0x00,0x01,0x80,d.getHours(),d.getMinutes(),d.getSeconds(),0x00]); });
+
+// Set clock style
+elements.setClockStyle.addEventListener('click', ()=>{
+    const style=parseInt(elements.clockstyle.value);
+    const d=new Date();
+    send([0x0b,0x00,0x06,0x01, style,0x01,0x00, d.getFullYear()-2000,d.getMonth()+1,d.getDate(),0x00]);
+});
+
+// Utility functions
+function send(arr){ if(characteristic) characteristic.writeValue(new Uint8Array(arr)); }
+function clamp(v,min,max){ v=parseInt(v); return Math.min(max,Math.max(min,v)); }
+</script>
+
+</body>
+</html>
